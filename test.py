@@ -24,9 +24,9 @@ def plot_circles(overlap, rng = (-20, 20)):
     ax.set_xlim(rng)
     ax.set_ylim(rng)
     for c in overlap.circles:
-        ax.add_artist(plt.Circle(c.coord, c.r, color='b', fill=False))
+        ax.add_artist(plt.Circle(c.coord(), c.r, color='b', fill=False))
     for v in overlap.get_vertices():
-        ax.plot(v.coord[0],v.coord[1],'ob')
+        ax.plot(v.x,v.y,'ob')
     cent = overlap.centroid()
     #avg = overlap.average()
     #ax.plot(avg[0],avg[1],'xg')
@@ -43,8 +43,8 @@ def compare_vertices(vert1, vert2):
     for v1 in vert1:
         match = False
         for v2 in vert2:
-            x_diff = abs(v1.coord[0] - v2.coord[0])
-            y_diff = abs(v1.coord[1] - v2.coord[1])
+            x_diff = abs(v1.x - v2.x)
+            y_diff = abs(v1.y - v2.y)
             if x_diff <= eps and y_diff <= eps:
                 match = True
                 break
@@ -52,22 +52,20 @@ def compare_vertices(vert1, vert2):
             return False
     return True
 
-# test vertice algo
-iterations = 1000
-count = 0
-fails = []
-for i in range(0,iterations):   
-    circles = generate_circles(randint(1,100))
-    overlap = CircleOverlap(circles)
-    vert1 = overlap.get_vertices(reset = True)
-    vert2 = overlap._get_vertices(reset = True)
-    if not(compare_vertices(vert1,vert2)):
-        fails.append(overlap)
-    print(i+1)
-print(len(fails) == 0)
+def test_vertices(iterations, rng=(1,100)):
+    fails = []
+    for i in range(0,iterations):   
+        circles = generate_circles(randint(1,100))
+        overlap = CircleOverlap(circles)
+        vert1 = overlap.get_vertices(reset = True)
+        vert2 = overlap._get_vertices(reset = True)
+        if not(compare_vertices(vert1,vert2)):
+            fails.append(overlap)
+        print(i+1)
+    print(len(fails) == 0)  
+    return fails
 
-# time vertice algo
-circles = generate_circles(10)
+no_circles = 3
+circles = generate_circles(no_circles)
 overlap = CircleOverlap(circles)
 plot_circles(overlap)
-print(overlap.centroid())
