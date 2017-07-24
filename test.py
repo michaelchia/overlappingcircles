@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from circleoverlap import CircleOverlap, Circle, dist, find_overlaps, \
     max_overlap
 
-# Testing
+# Test functions
 def generate_overlap_circles(n, 
                               centre = (0,0), 
                               rng = (1,10), 
@@ -38,13 +38,14 @@ def generate_circles(n, xy_rng = (-10, 10), r_rng = (1,10), r_transform = lambda
 def plot_circles(circles_ls, 
                  rng = (-20, 20), 
                  circles = True,
+                 circle_points = False,
                  overlaps = True,
                  vertices = True,
                  centroid = True,
                  component_centroids = False):
     fig, ax = plt.subplots()
-    ax.set_xlim(rng)
-    ax.set_ylim(rng)
+    #ax.set_xlim(rng)
+    #ax.set_ylim(rng)
     if circles:
         for c in circles_ls:
             ax.add_artist(plt.Circle(c.coord(), c.r, color='0.2', fill=False))
@@ -53,6 +54,7 @@ def plot_circles(circles_ls,
         for overlap in overlap_ls:
             plot_overlap(overlap, subplots = (fig, ax), 
                          circles = False,
+                         circle_points = circle_points,
                          vertices = vertices,
                          centroid = centroid,
                          component_centroids = component_centroids)
@@ -61,17 +63,21 @@ def plot_overlap(overlap,
                  subplots = None,
                  rng = (-20, 20),
                  circles = True,
+                 circle_points = False,
                  vertices = True,
                  centroid = True,
                  component_centroids = False):
     if subplots is None:
         subplots = plt.subplots()       
-        subplots[1].set_xlim(rng)
-        subplots[1].set_ylim(rng)
+    #    subplots[1].set_xlim(rng)
+    #    subplots[1].set_ylim(rng)
     fig, ax = subplots
     if circles:
         for c in overlap.circles:
             ax.add_artist(plt.Circle(c.coord(), c.r, color='0.2', fill=False))
+    if circle_points:
+        for c in overlap.circles:
+            ax.plot(c.x,c.y,'o',color='0.2',ms=2) 
     if vertices:
         for v in overlap.get_vertices():
             ax.plot(v.x,v.y,'ob',ms=3)
@@ -83,6 +89,7 @@ def plot_overlap(overlap,
             for seg in overlap.get_circle_segments():
                 cent = seg.centroid()
                 ax.plot(cent[0],cent[1],'xr')
+    return (fig, ax)
         
 def compare_vertices(vert1, vert2):
     eps = 1e-12
@@ -110,35 +117,3 @@ def test_vertices(iterations, rng=(1,100)):
         print(i+1)
     print(len(fails) == 0)  
     return fails
-
-def refresh_circles(circles):
-    return [Circle(c.coord(),c.r) for c in circles]
-
-import time
-
-no_circles = 20
-circles = generate_overlap_circles(no_circles,r_transform = lambda x: x**2/10)
-plot_circles(circles)
-
-no_circles = 100
-circles = generate_circles(no_circles)
-plot_circles(circles)
-
-no_circles = 100
-ratio = 0.8
-no_overlap_circles = int(no_circles*ratio)
-no_other_circles = no_circles - no_overlap_circles
-circles = generate_overlap_circles(no_overlap_circles, r_transform = lambda x: x**2)
-circles = circles + generate_circles(no_other_circles, r_rng=(1,10), xy_rng = (-5,5), r_transform = lambda x: sqrt(x))
-plot_circles(circles, overlaps = False)
-t0 = time.time()
-overlaps = find_overlaps(circles)
-t1 = time.time()
-print(t1-t0)
-print(len(overlaps))
-overlap = max_overlap(overlaps)
-plot_overlap(overlap, rng=(-10,10))
-t2 = time.time()
-print(t2-t1)
-print(len(overlap.circles))
-print(overlap.centroid())

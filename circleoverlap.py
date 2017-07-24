@@ -11,6 +11,7 @@ import networkx as nx
 import sys
 import abc
 from abc import abstractmethod
+import matplotlib.pyplot as plt
 
 if sys.version_info >= (3, 4):
     ABC = abc.ABC
@@ -58,6 +59,18 @@ def make_graph(circles):
             if c1.intersects(c2):
                 G.add_edge(c1,c2)
     return G  
+
+def plot_circles(circles_ls, subplots = None, circles = True, points = False):
+    if subplots is None:
+        subplots = plt.subplots()
+    fig, ax = subplots
+    if circles:
+        for c in circles_ls:
+            ax.add_artist(plt.Circle(c.coord(), c.r, color='0.2', fill=False))
+    opacity = 1 if points else 0 # so that axis range will cover points
+    for c in circles_ls:
+        ax.plot(c.x,c.y,'o',color='0.2',ms=2,alpha=opacity) 
+    return subplots
 
 def dist(coord1, coord2):
     return sqrt((coord1[0]-coord2[0])**2 + (coord1[1]-coord2[1])**2)
@@ -357,6 +370,35 @@ class CircleOverlap(Shape):
             segments.append(circle.get_segment(vertices[i],vertices[i+1]))
         return segments
     
+    def plot(self,
+             subplots = None,           
+             circles = True,
+             points = False,
+             vertices = True,
+             centroid = True,
+             component_centroids = False):
+        if subplots is None:
+            subplots = plt.subplots()
+        fig, ax = subplots       
+        if circles:
+            for c in self.circles:
+                ax.add_artist(plt.Circle(c.coord(), c.r, color='0.2', fill=False))
+        if points:
+            for c in self.circles:
+                ax.plot(c.x,c.y,color='0.2',ms=2)            
+        if vertices:
+            for v in self.get_vertices():
+                ax.plot(v.x,v.y,'ob',ms=3)
+        if centroid:
+            cent = self.centroid()
+            ax.plot(cent[0],cent[1],'or',ms=3)
+        if component_centroids:
+            if len(self.get_vertices()) > 2:
+                for seg in self.get_circle_segments():
+                    cent = seg.centroid()
+                    ax.plot(cent[0],cent[1],'xr')
+        return subplots
+    
     def __gt__(self, other):
         if len(self.circles) == len(other.circles):
             self.circles.sort()
@@ -492,7 +534,7 @@ class MajorSegment(CircleSegment):
 class Triangle(Polygon):
     def __init__(self, vertices):
         if len(vertices) != 3:
-            raise NameError('Incorrect number of vertices')
+            raise TypeError('Incorrect number of vertices')
         super(Triangle, self).__init__(vertices)
              
     def centroid(self, area = False):
