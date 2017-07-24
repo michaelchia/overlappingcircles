@@ -7,6 +7,7 @@ Created on Wed Jul 19 23:25:21 2017
 """
 from math import sqrt, atan2, sin, cos, pi
 from numpy import mean
+import networkx as nx
 import sys
 import abc
 from abc import abstractmethod
@@ -16,6 +17,50 @@ if sys.version_info >= (3, 4):
 else:
     ABC = abc.ABCMeta('ABC', (), {})
 
+def find_max_overlap(circles):
+    return max_overlap(find_overlaps(circles))
+    
+def max_overlap(overlaps):
+#   "fringe case" may remove circles hence have to evaluate before 
+#   identifying max
+    overlaps.sort(reverse=True)
+    mx = overlaps[0]
+    mx.get_vertices()
+    for i in range(1,len(overlaps)):
+        temp = overlaps[i]
+        if mx > temp:
+            return mx
+        temp.get_vertices()
+        mx = max(mx, temp)
+    return mx
+
+def find_overlaps(circles):
+#   Cliques guarantee a pairwise overlap but not mutual overlaping.
+#   "Fringe case" occurs amongst a set of 3 circles that pairwise
+#       overlap but do not share overlapping region.
+#   Cliques with greater than 3 circles may have this property if a set of 3
+#       circles has this property.
+#   No quick way to check for such a case but is dealt with when finding
+#       vertices in CircleOverlap.get_vertices()) in the CircleOverlap class
+    G = make_graph(circles)
+    cliques = list(nx.find_cliques(G))
+    return [CircleOverlap(clique) for clique in cliques]
+
+def make_graph(circles):
+    G = nx.Graph()
+    circles.sort(key = lambda x: x.min_x())
+    for i in range(0,len(circles)):
+        c1 = circles[i]
+        for j in range(i+1,len(circles)):
+            c2 = circles[j]
+            if c2.max_x() <= c1.min_x():
+                break
+            if c1.intersects(c2):
+                G.add_edge(c1,c2)
+    return G  
+
+def dist(coord1, coord2):
+    return sqrt((coord1[0]-coord2[0])**2 + (coord1[1]-coord2[1])**2)
 
 class Shape(ABC):
     @abstractmethod
@@ -30,8 +75,8 @@ class Shape(ABC):
 
 class Point:
     def __init__(self, coord):
-        self.x = coord[0]
-        self.y = coord[1]
+        self.x = float(coord[0])
+        self.y = float(coord[1])
     
     def polar_angle(self, origin):
         theta = atan2(self.y-origin[1], self.x-origin[0])
@@ -49,6 +94,67 @@ class Point:
     def __repr__(self):
         return self.__str__()
 
+class Circle(Shape, Point):
+    def __init__(self, coord, r):
+        Point.__init__(self, coord)
+        self.r = abs(float(r))
+    
+    def centroid(self, area = False):
+        if area:
+            return (self.coord(), self.area())
+        return self.coord()
+    
+    def intersect(self, other):
+        d = dist(self.coord(), other.coord())
+        if d >= self.r + other.r or (d == 0 and self.r == other.r):
+            return None
+        if d <= abs(self.r - other.r):
+            return min(self, other)
+        l = (self.r**2 - other.r**2 + d**2) / (2*d)
+        h = sqrt(self.r**2 - l**2)
+        xmid = self.x + l/d*(other.x - self.x)
+        ymid = self.y + l/d*(other.y - self.y)
+        x1 = xmid + h/d*(other.y - self.y)
+        y1 = ymid - h/d*(other.x - self.x)
+        x2 = xmid - h/d*(other.y - self.y)
+        y2 = ymid + h/d*(other.x - self.x)
+        return [Intersection((x1,y1),(self,other)), \
+                Intersection((x2,y2),(self,other))]
+        
+    def contains_point(self, pt):
+        return self.r > dist(self.coord(), pt.coord())
+       
+    def get_segment(self, pt1, pt2, minor = True):
+        psi1 = pt1.polar_angle(self.coord())
+        psi2 = pt2.polar_angle(self.coord())
+        if minor:
+            return CircleSegment(self.coord(), self.r, (psi1, psi2))
+        return MajorSegment(self.coord(), self.r, (psi1, psi2))
+    
+    def area(self):
+        return pi*self.r**2
+    
+    def max_x(self):
+        return self.x + self.r
+        
+    def min_x(self):
+        return self.x - self.r
+    
+    def intersects(self, other):
+        return dist(self.coord(), other.coord()) < self.r + other.r
+    
+    def __hash__(self):
+        return hash(hash(self.coord()) + hash(self.r))
+    def __eq__(self, other):
+        return self.coord == other.coord() and self.r == other.r
+    def __gt__(self, other):
+        return self.r > other.r
+
+class Intersection(Point):
+    def __init__(self, coord, circles):
+        super(Intersection, self).__init__(coord)
+        self.circles = circles
+
 class CircleOverlap(Shape):
     def __init__(self, circles):
         self.circles = circles
@@ -56,28 +162,16 @@ class CircleOverlap(Shape):
         
     def centroid(self, area = False):
         vertices = self.get_vertices()
-        if vertices is None:
+        if vertices is False:
             return None
         if len(vertices) == 1: # if just a circle
             c = vertices[0].coord()
             if area:
                 return (c, vertices[0].circles[0].area())
             return c
-        if len(vertices) == 2: # if only two intersecting circles
-            l_seg = max(vertices[0].circles).get_segment(vertices[0],vertices[1])
-            s_seg = min(vertices[0].circles).get_segment(vertices[0],vertices[1])
-            if l_seg.get_major_segment().contains_point(s_seg):
-                s_seg = s_seg.get_major_segment()
-            s_c, s_a = s_seg.centroid(area = True)
-            l_c, l_a = l_seg.centroid(area = True)
-            a = s_a + l_a
-            x = (s_c[0] * s_a + l_c[0] * l_a) / a
-            y = (s_c[1] * s_a + l_c[1] * l_a) / a
-            if area:
-                return ((x, y), a)
-            return (x, y)
         shapes = self.get_circle_segments()
-        shapes.append(Polygon(vertices))
+        if len(vertices) > 2:
+            shapes.append(Polygon(vertices))
         a, x, y = (0, 0, 0)
         for s in shapes:
             cent, ar = s.centroid(area = True)
@@ -90,15 +184,46 @@ class CircleOverlap(Shape):
             return ((x, y), a)
         return (x, y)
     
-    def get_vertices(self, reset = False):   
+    def area(self):
+        vertices = self.get_vertices()
+        if vertices is False:
+            return None
+        if len(vertices) == 1:
+            return vertices[0].circles[0].area()
+        shapes = self.get_circle_segments()
+        if len(vertices) > 2:
+            shapes.append(Polygon(vertices))
+        return sum(map(lambda x: x.area(), shapes))
+    
+    def contains_point(self, pt):
+        circles = self.get_defining_circles()
+        for c in circles:
+            if not(c.contains_point(pt)):
+                return False
+        return True
+    
+    def get_vertices(self, reset = False, sort = True, i = 0):   
         if reset:
             self.vertices = None
+        self.fringe = []
+        circles = self.circles.copy()
         if self.vertices is None:
-            self.circles.sort()
+            if sort:
+                self.circles.sort()
             for c in self.circles:
                 self.add_circle(c)
                 if self.vertices is False:
                     return False
+        if len(self.fringe) > 1 and i < 2:
+            # dealing with "fringe case"
+            # there is probably a better way of dealing with this
+            circles.remove(self.fringe[0])
+            circles = [self.fringe[0]] + circles
+            other = CircleOverlap(circles)
+            other.get_vertices(sort = False, i = i + 1)
+            if other > self and other.vertices is not False:
+                self.vertices = other.vertices
+                self.fringe = other.fringe
         return self.vertices
                 
     def add_circle(self, circle):
@@ -116,9 +241,14 @@ class CircleOverlap(Shape):
             self.vertices = intersection
             return
         circles = self.filter_vertices(circle)
-        if len(circles) == 0: # circle within vertices
+        vertices = self.vertices
+        if len(circles) == 0: # circle within vertices or "fringe case"
             circles = self.get_defining_circles()
-            self.vertices = []
+            for c in circles:
+                if circle.intersect(c) is None:
+                    self.vertices = False
+                    return
+            vertices = []
         for c in circles:
             candidates = circle.intersect(c)
             if candidates is None:
@@ -126,9 +256,15 @@ class CircleOverlap(Shape):
                 return
             if type(candidates) is list:
                 points = self.filter_points(candidates, circles)
-                self.vertices = self.vertices + points
-        if len(self.vertices) == 0: # circle inside all previous circles
-            self.vertices = [circle.to_point()]
+                vertices = vertices + points
+        if len(vertices) == 0: 
+            if self.contains_point(circle): # circle inside all previous circles
+                vertices = [circle]
+            else: # "fringe case"
+                self.fringe.append(circle)
+                self.circles.remove(circle)
+                vertices = self.vertices
+        self.vertices = vertices
         return
     
     def filter_vertices(self, circle):
@@ -202,101 +338,34 @@ class CircleOverlap(Shape):
             return vertices
         self.vertices = vertices
         return vertices
-      
-    def area(self):
+    
+    def get_circle_segments(self):
         vertices = self.get_vertices()
-        if vertices is None:
-            return None
-        if len(vertices) == 1:
-            return vertices[0].circles[0].area()
+        if vertices is False or len(vertices) == 1:
+            return []
         if len(vertices) == 2:
             l_seg = max(vertices[0].circles).get_segment(vertices[0],vertices[1])
             s_seg = min(vertices[0].circles).get_segment(vertices[0],vertices[1])
             if l_seg.get_major_segment().contains_point(s_seg):
                 s_seg = s_seg.get_major_segment()
-            s_a = s_seg.area()
-            l_a = l_seg.inv_area()
-            return s_a + l_a
-        shapes = self.get_circle_segments()
-        shapes.append(Polygon(vertices))
-        return sum(map(lambda x: x.area(), shapes))
-    
-    def get_circle_segments(self):
-        if self.get_vertices() is None or len(self.get_vertices()) == 1:
-            return None
-        vertices = Polygon(self.get_vertices()).vertices.copy()
+            return [s_seg, l_seg]
+        vertices = Polygon(vertices).vertices.copy()
         vertices.append(vertices[0])
         segments = []
         for i in range(0,len(vertices)-1):
-            circle = self.matching_circle(vertices[i], vertices[i+1])
+            circle = max([c for c in vertices[i].circles if c in vertices[i+1].circles])
             segments.append(circle.get_segment(vertices[i],vertices[i+1]))
         return segments
     
-    def matching_circle(self, vertice1, vertice2):
-        circles = []
-        for c1 in vertice1.circles:
-            if c1 in vertice2.circles:
-                circles.append(c1)
-        return max(circles)
-    
-    def contains_point(self, pt):
-        circles = self.get_defining_circles()
-        for c in circles:
-            if not(c.contains_point(pt)):
-                return False
-        return True
-
-class Circle(Shape, Point):
-    def __init__(self, coord, r):
-        Point.__init__(self, coord)
-        self.r = float(r)
-    
-    def centroid(self, area = False):
-        if area:
-            return (self.coord(), self.area())
-        return self.coord()
-    
-    def intersect(self, other):
-        d = dist(self.coord(), other.coord())
-        if d >= self.r + other.r or (d == 0 and self.r == other.r):
-            return None
-        if d <= abs(self.r - other.r):
-            return min(self, other)
-        l = (self.r**2 - other.r**2 + d**2) / (2*d)
-        h = sqrt(self.r**2 - l**2)
-        xmid = self.x + l/d*(other.x - self.x)
-        ymid = self.y + l/d*(other.y - self.y)
-        x1 = xmid + h/d*(other.y - self.y)
-        y1 = ymid - h/d*(other.x - self.x)
-        x2 = xmid - h/d*(other.y - self.y)
-        y2 = ymid + h/d*(other.x - self.x)
-        return [Intersection((x1,y1),(self,other)), \
-                Intersection((x2,y2),(self,other))]
-        
-    def contains_point(self, pt):
-        return self.r > dist(self.coord(), pt.coord())
-       
-    def get_segment(self, pt1, pt2, minor = True):
-        psi1 = pt1.polar_angle(self.coord())
-        psi2 = pt2.polar_angle(self.coord())
-        if minor:
-            return CircleSegment(self.coord(), self.r, (psi1, psi2))
-        return MajorSegment(self.coord(), self.r, (psi1, psi2))
-    
-    def area(self):
-        return pi*self.r**2
-    
-    def __hash__(self):
-        return hash(hash(self.coord()) + hash(self.r))
-    def __eq__(self, other):
-        return self.coord == other.coord() and self.r == other.r
     def __gt__(self, other):
-        return self.r > other.r
-
-class Intersection(Point):
-    def __init__(self, coord, circles):
-        super(Intersection, self).__init__(coord)
-        self.circles = circles
+        if len(self.circles) == len(other.circles):
+            self.circles.sort()
+            other.circles.sort()
+            i = 0
+            while i < len(self.circles)-1 and self.circles[i].r==self.circles[i].r:
+                i = i + 1
+            return self.circles[i].r < self.circles[i].r
+        return len(self.circles) > len(other.circles)
 
 class Polygon(Shape):
     def __init__(self, vertices):
@@ -332,8 +401,8 @@ class Polygon(Shape):
                     vertices[i+1].x*vertices[i].y
         return a / 2
     
-    def contains_point(self, pt):
-        return False # not implemented yet
+    def contains_point(self, pt): # use ray casting algorithm
+        raise NotImplementedError('Not implemented yet')
     
     def order_vertices(self):
         centre = self.average()
@@ -369,18 +438,17 @@ class CircleSegment(Circle):
     def area(self):
         theta = self.angle()
         return (self.r**2/2)*(theta-sin(theta))
-        
+    
+    def contains_point(self, pt):
+        return super(CircleSegment, self).contains_point(pt) and \
+            not(self.get_major_segment.contains_point(pt))
+    
     def angle(self):       
         theta = abs(self.psi2 - self.psi1)
         return min(theta, 2*pi - theta)
     
     def centre_polar_angle(self):
         return (self.psi1+self.angle()/2) % (2*pi)
-    
-    def contains_point(self, pt):
-        theta = pt.polar_angle(self.coord())
-        return super(CircleSegment, self).contains_point(pt) and \
-            self.within_angle(theta)
     
     def within_angle(self, theta):
         return 0 < theta - self.psi1 < self.angle() or \
@@ -450,6 +518,3 @@ class Triangle(Polygon):
         x2, y2 = self.vertices[1].coord()
         x3, y3 = self.vertices[2].coord()
         return (x1*y2+x2*y3+x3*y1-x1*y3-x3*y2-x2*y1)/2
-
-def dist(coord1, coord2):
-    return sqrt((coord1[0]-coord2[0])**2 + (coord1[1]-coord2[1])**2)
