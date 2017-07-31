@@ -117,7 +117,7 @@ class CircleOverlap(Shape):
                 if self.vertices[0] != circle: # not same circle
                     self.vertices = False
                 return
-            if type(intersection) is Circle:
+            if isinstance(intersection, Circle):
                 self.vertices = [intersection]
                 return
             self.vertices = intersection
@@ -150,6 +150,7 @@ class CircleOverlap(Shape):
         return
     
     def filter_vertices(self, circle):
+        # removes vertices not contained in circle and returns defining circles
         vertices = []
         circles = set()
         for pt in self.vertices:
@@ -157,7 +158,7 @@ class CircleOverlap(Shape):
                 vertices.append(pt)
                 circles.add(pt.circles[0])
                 circles.add(pt.circles[1])
-        if len(vertices) == 0:
+        if len(vertices) == 0: # none of vertices in circle, do not update
             return []
         self.vertices = vertices
         return circles
@@ -245,7 +246,7 @@ class CircleOverlap(Shape):
             v1 = vertices[i]
             v2 = vertices[i+1]
             circle = max([c for c in v1.circles if c in v2.circles])
-            is_minor = same_side_of_line(circle,poly.get_average_cord(),v1,v2)
+            is_minor = same_side_of_line(circle,poly.average_coord(),v1,v2)
             segment = circle.get_segment(v1,v2,is_minor)
             segments.append(segment)
         return segments
